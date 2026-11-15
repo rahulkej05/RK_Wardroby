@@ -21,39 +21,80 @@ const CURATED_DESIGN_CATALOG = [
     id: 'double-breasted-wool-set',
     title: 'Architectural Wool Overcoat & Pleated Trouser',
     category: 'Outerwear',
-    sellers: ['Atelier Nord (Copenhagen)', 'Verve Tailors (London)'],
+    sellers: ['Zara India (Mumbai)', 'Mango India (Mumbai)'],
   },
   {
     id: 'champagne-bias-wrap-dress',
     title: 'Bias-Cut Champagne Silk Wrap Midi',
     category: 'Dresses',
-    sellers: ['Maison Verre (Paris)', 'Sora Collective (Milan)'],
+    sellers: ['Mango India (Mumbai)', 'Nykaa Fashion (Mumbai)'],
   },
   {
     id: 'boxy-selvedge-cropped-set',
     title: 'Cropped Selvedge Jacket & High-Rise Trouser',
     category: 'Tailoring',
-    sellers: ['Kuro Studio (Tokyo)', 'Atelier Nord (Copenhagen)'],
+    sellers: ['Uniqlo India (Gurugram)', 'Myntra (Bengaluru)'],
   },
   {
     id: 'asymmetrical-merino-aline',
     title: 'Asymmetrical Ribbed Merino & A-Line Midi',
     category: 'Knitwear',
-    sellers: ['Sora Collective (Milan)', 'Maison Verre (Paris)'],
+    sellers: ['Uniqlo India (Gurugram)', 'H&M India (Delhi NCR)'],
   },
   {
     id: 'unstructured-linen-suiting',
     title: 'Unstructured Stone Linen Blazer & Pleated Pant',
     category: 'Tailoring',
-    sellers: ['Verve Tailors (London)', 'Kuro Studio (Tokyo)'],
+    sellers: ['H&M India (Delhi NCR)', 'Myntra (Bengaluru)'],
   },
   {
     id: 'belted-gabardine-trench',
     title: 'Belted Matte Technical Gabardine Trench',
     category: 'Outerwear',
-    sellers: ['Atelier Nord (Copenhagen)', 'Maison Verre (Paris)', 'Kuro Studio (Tokyo)'],
+    sellers: ['Zara India (Mumbai)', 'Mango India (Mumbai)', 'Nykaa Fashion (Mumbai)'],
   },
 ];
+
+function buildIndianRetailerUrl(sellerName: string, queryText: string): string {
+  const lower = sellerName.toLowerCase();
+  const cleanQuery = queryText.trim() || 'minimalist outfit';
+  const encoded = encodeURIComponent(cleanQuery);
+  const slug = cleanQuery
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .trim()
+    .replace(/\s+/g, '-');
+
+  if (lower.includes('zara')) {
+    return `https://www.zara.com/in/en/search?searchTerm=${encoded}`;
+  }
+  if (lower.includes('h&m') || lower.includes('hm')) {
+    return `https://www2.hm.com/en_in/search-results.html?q=${encoded}`;
+  }
+  if (lower.includes('uniqlo')) {
+    return `https://www.uniqlo.com/in/en/search?q=${encoded}`;
+  }
+  if (lower.includes('mango')) {
+    return `https://shop.mango.com/in/en/search?kw=${encoded}`;
+  }
+  if (lower.includes('nykaa')) {
+    return `https://www.nykaafashion.com/catalogsearch/result/?q=${encoded}`;
+  }
+  if (lower.includes('ajio')) {
+    return `https://www.ajio.com/search/?text=${encoded}`;
+  }
+  if (lower.includes('tata') || lower.includes('cliq')) {
+    return `https://www.tatacliq.com/search/?searchCategory=all&text=${encoded}`;
+  }
+  if (lower.includes('westside')) {
+    return `https://www.westside.com/search?q=${encoded}`;
+  }
+  if (lower.includes('fabindia')) {
+    return `https://www.fabindia.com/search?q=${encoded}`;
+  }
+  // Default Indian marketplace: Myntra
+  return `https://www.myntra.com/${slug || 'clothing'}`;
+}
 
 interface TavilyResultItem {
   title: string;
@@ -246,13 +287,14 @@ async function startServer() {
 
       const ai = getGeminiClient();
 
-      const systemInstruction = `You are Wardroby's senior personal stylist and sourcing director.
+      const systemInstruction = `You are Wardroby's senior personal stylist and India fashion sourcing director.
 Based on the client's complete profile, generate EXACTLY 5 distinct, complete outfit recommendations ranked from 1 (best match) to 5.
 Every outfit must be tailored specifically to the client's gender / style presentation (${gender}) AND body type (${bodyType}), respecting:
 1. Gender presentation, body type proportions, height frame, usual size, and fit preference.
-2. Occasion, climate, and budget per piece.
+2. Occasion, climate, and budget per piece strictly in INR (Indian Rupees, ₹).
 3. All multi-selected style/material preferences and extra notes.
-4. Curated independent or boutique sellers (e.g., Atelier Nord, Maison Verre, Kuro Studio, Sora Collective, Verve Tailors, or similar credible boutiques) whose dispatch speed matches the client's delivery date preference.
+4. SOURCING RULE (STRICT): Recommend ONLY established Indian fashion websites/platforms — specifically choose from Myntra, Zara India, H&M India, Uniqlo India, Mango India, Nykaa Fashion, AJIO, Tata CLiQ Fashion, Westside, or Fabindia. Do NOT use foreign-only websites or USD/EUR/GBP pricing.
+5. Set sellerCity to a realistic Indian fulfillment hub (e.g. Mumbai, Bengaluru, Delhi NCR, Gurugram, Hyderabad) and estimatedDelivery to realistic pan-India delivery matching the user's delivery preference.
 
 When an outfit aligns visually with one of our curated reference silhouettes below, set referenceDesignId to that exact ID; otherwise set referenceDesignId to "".
 Curated reference silhouettes:
@@ -268,14 +310,14 @@ Output strictly valid JSON matching the schema with EXACTLY 5 items in the recom
 - Fit Preference: ${fitPreference || 'Balanced'}
 - Occasion: ${occasion}
 - Climate / Season: ${climate || 'All-season'}
-- Budget Per Piece: ${budgetPerPiece || 'Flexible'}
+- Budget Per Piece (INR): ${budgetPerPiece || 'Flexible'}
 - Selected Preferences: ${prefList.length > 0 ? prefList.join(', ') : 'None specified'}
 - Additional Notes: ${typeof extraNotes === 'string' && extraNotes.trim() ? extraNotes.trim() : 'None'}
 - Delivery Preference: ${deliveryPreference || 'Standard (3-5 business days)'}${
         targetDeliveryDate ? ` (Needed by: ${targetDeliveryDate})` : ''
       }
 
-Return the Top 5 outfit recommendations ranked 1 through 5.`;
+Return the Top 5 outfit recommendations ranked 1 through 5 with all prices in INR (₹) and sourced from Indian fashion websites (Myntra, Zara India, H&M India, Uniqlo India, Mango India, Nykaa Fashion, AJIO, etc.).`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-4-hydrogen',
@@ -289,7 +331,7 @@ Return the Top 5 outfit recommendations ranked 1 through 5.`;
               stylingOverview: {
                 type: Type.STRING,
                 description:
-                  'Concise 2-sentence proportion and sourcing strategy tailored to this client gender and body type.',
+                  'Concise 2-sentence proportion and India sourcing strategy tailored to this client gender and body type.',
               },
               recommendations: {
                 type: Type.ARRAY,
@@ -312,23 +354,24 @@ Return the Top 5 outfit recommendations ranked 1 through 5.`;
                     },
                     sellerName: {
                       type: Type.STRING,
-                      description: 'Curated seller or boutique name.',
+                      description:
+                        'Indian fashion website name (Myntra, Zara India, H&M India, Uniqlo India, Mango India, Nykaa Fashion, AJIO, Tata CLiQ Fashion, Westside, or Fabindia).',
                     },
                     sellerCity: {
                       type: Type.STRING,
-                      description: 'Seller origin city.',
+                      description: 'Indian fulfillment hub city (e.g., Mumbai, Bengaluru, Delhi NCR, Gurugram).',
                     },
                     pricePerPieceEstimate: {
-                      type: Type.NUMBER,
-                      description: 'Average USD price per piece as an integer.',
+                      type: Type.INTEGER,
+                      description: 'Average INR (₹) price per piece as an integer (e.g., 3499).',
                     },
                     totalOutfitEstimate: {
-                      type: Type.NUMBER,
-                      description: 'Estimated total USD cost of the outfit.',
+                      type: Type.INTEGER,
+                      description: 'Estimated total INR (₹) cost of the outfit as an integer (e.g., 8990).',
                     },
                     estimatedDelivery: {
                       type: Type.STRING,
-                      description: 'Delivery window aligned to the user delivery preference.',
+                      description: 'Pan-India delivery window aligned to the user delivery preference.',
                     },
                     fitMatchScore: {
                       type: Type.INTEGER,
@@ -342,6 +385,10 @@ Return the Top 5 outfit recommendations ranked 1 through 5.`;
                     stylingTip: {
                       type: Type.STRING,
                       description: 'Actionable sizing or proportion tip for wearing this outfit.',
+                    },
+                    searchKeywords: {
+                      type: Type.STRING,
+                      description: 'Short 3-5 word shopping search term for this outfit on the Indian website.',
                     },
                     referenceDesignId: {
                       type: Type.STRING,
@@ -360,6 +407,7 @@ Return the Top 5 outfit recommendations ranked 1 through 5.`;
                     'fitMatchScore',
                     'whyItWorksForYou',
                     'stylingTip',
+                    'searchKeywords',
                     'referenceDesignId',
                   ],
                 },
@@ -377,9 +425,39 @@ Return the Top 5 outfit recommendations ranked 1 through 5.`;
       }
 
       const parsed = JSON.parse(rawText);
-      const recs = Array.isArray(parsed.recommendations)
+      const rawRecs = Array.isArray(parsed.recommendations)
         ? parsed.recommendations.slice(0, 5)
         : [];
+
+      const recs = rawRecs.map((item: Record<string, unknown>) => {
+        const sellerName =
+          typeof item.sellerName === 'string' && item.sellerName.trim()
+            ? item.sellerName.trim()
+            : 'Myntra';
+        const searchTerm =
+          typeof item.searchKeywords === 'string' && item.searchKeywords.trim()
+            ? item.searchKeywords.trim()
+            : typeof item.outfitTitle === 'string'
+              ? item.outfitTitle
+              : 'outfit';
+        return {
+          rank: Number(item.rank) || 1,
+          outfitTitle: String(item.outfitTitle || ''),
+          piecesIncluded: Array.isArray(item.piecesIncluded)
+            ? item.piecesIncluded.map(String)
+            : [],
+          sellerName,
+          sellerCity: String(item.sellerCity || 'Mumbai'),
+          pricePerPieceEstimate: Math.round(Number(item.pricePerPieceEstimate) || 0),
+          totalOutfitEstimate: Math.round(Number(item.totalOutfitEstimate) || 0),
+          estimatedDelivery: String(item.estimatedDelivery || '2–4 days pan-India'),
+          fitMatchScore: Math.round(Number(item.fitMatchScore) || 90),
+          whyItWorksForYou: String(item.whyItWorksForYou || ''),
+          stylingTip: String(item.stylingTip || ''),
+          referenceDesignId: String(item.referenceDesignId || ''),
+          sourceUrl: buildIndianRetailerUrl(sellerName, searchTerm),
+        };
+      });
 
       res.json({
         stylingOverview: parsed.stylingOverview ?? '',
@@ -484,6 +562,7 @@ STRICT SCOPE RULE (NON-NEGOTIABLE):
 - If any part of a message asks for something outside fashion, politely refuse that part in one short sentence and offer fashion help instead.
 - Do NOT repeat or re-run the site's 4-step Top 5 seller recommendation questionnaire unless the user explicitly asks about their saved recommendations.
 - Whenever the user asks about current fashion trends, live destination weather for outfit planning, upcoming seasonal collections, or real-world brands/stores, call the "searchWebFashion" tool first so your answer uses real-time web data. Keep your Tavily search query strictly focused on fashion, clothing, or destination weather.
+- When suggesting prices or Indian shopping platforms, quote budgets in INR (₹) and prioritize Indian retailers (Myntra, Zara India, H&M India, Uniqlo India, Mango India, Nykaa Fashion, AJIO, Tata CLiQ).
 
 RESPONSE LENGTH & STYLE RULE (STRICT):
 - Keep answers accurate, specific, and brief: aim for 2–4 short sentences or up to 3–4 concise bullet points (roughly 50–100 words max).
@@ -590,15 +669,19 @@ RESPONSE LENGTH & STYLE RULE (STRICT):
   app.post('/api/contact', (req, res) => {
     const { name, email, message } = req.body ?? {};
     if (!name || typeof name !== 'string' || !name.trim()) {
-      res.status(400).json({ error: 'Name is required.' });
+      res.status(400).json({ error: 'Please enter your name.' });
       return;
     }
     if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      res.status(400).json({ error: 'A valid email address is required.' });
+      res.status(400).json({
+        error: 'Please enter a valid email address (for example, name@example.com).',
+      });
       return;
     }
     if (!message || typeof message !== 'string' || message.trim().length < 5) {
-      res.status(400).json({ error: 'Please include a short message.' });
+      res.status(400).json({
+        error: 'Please write a message of at least 5 characters.',
+      });
       return;
     }
 

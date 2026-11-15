@@ -244,6 +244,7 @@ export async function saveRecommendationRun(
     whyItWorksForYou: String(o.whyItWorksForYou || '').slice(0, 600),
     stylingTip: String(o.stylingTip || '').slice(0, 400),
     referenceDesignId: String(o.referenceDesignId || '').slice(0, 80),
+    sourceUrl: String(o.sourceUrl || '').slice(0, 300),
   }));
 
   try {

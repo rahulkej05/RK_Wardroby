@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Calendar,
   Check,
+  ExternalLink,
   Globe,
   History,
   Instagram,
@@ -51,13 +52,52 @@ const DEFAULT_WIZARD_VALUES: WizardFormValues = {
   usualSize: 'M',
   fitPreference: 'Balanced',
   occasion: 'Daily & Work',
-  budgetPerPiece: '$250 – $500',
+  budgetPerPiece: '₹5,000 – ₹10,000',
   climate: 'Mild / Layering',
   preferences: ['Monochrome & Neutrals', 'Natural Fabrics Only'],
   extraNotes: '',
   deliveryPreference: 'Standard (3–5 Business Days)',
   targetDeliveryDate: '',
 };
+
+function getIndianStoreUrl(
+  sourceUrl: string | undefined,
+  sellerName: string,
+  outfitTitle: string
+): string {
+  if (sourceUrl && sourceUrl.startsWith('https://')) {
+    return sourceUrl;
+  }
+  const lower = sellerName.toLowerCase();
+  const encoded = encodeURIComponent(outfitTitle || 'minimalist outfit');
+  const slug = (outfitTitle || 'clothing')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .trim()
+    .replace(/\s+/g, '-');
+  if (lower.includes('zara')) {
+    return `https://www.zara.com/in/en/search?searchTerm=${encoded}`;
+  }
+  if (lower.includes('h&m') || lower.includes('hm')) {
+    return `https://www2.hm.com/en_in/search-results.html?q=${encoded}`;
+  }
+  if (lower.includes('uniqlo')) {
+    return `https://www.uniqlo.com/in/en/search?q=${encoded}`;
+  }
+  if (lower.includes('mango')) {
+    return `https://shop.mango.com/in/en/search?kw=${encoded}`;
+  }
+  if (lower.includes('nykaa')) {
+    return `https://www.nykaafashion.com/catalogsearch/result/?q=${encoded}`;
+  }
+  if (lower.includes('ajio')) {
+    return `https://www.ajio.com/search/?text=${encoded}`;
+  }
+  if (lower.includes('tata') || lower.includes('cliq')) {
+    return `https://www.tatacliq.com/search/?searchCategory=all&text=${encoded}`;
+  }
+  return `https://www.myntra.com/${slug || 'clothing'}`;
+}
 
 export default function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -87,6 +127,11 @@ export default function App() {
   const [contactMessage, setContactMessage] = useState('');
   const [contactSending, setContactSending] = useState(false);
   const [contactError, setContactError] = useState('');
+  const [contactFieldErrors, setContactFieldErrors] = useState<{
+    name?: string;
+    email?: string;
+    message?: string;
+  }>({});
   const [contactRefId, setContactRefId] = useState<string | null>(null);
 
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
@@ -167,7 +212,7 @@ export default function App() {
                 usualSize: String(data.usualSize || 'M'),
                 fitPreference: String(data.fitPreference || 'Balanced'),
                 occasion: String(data.occasion || 'Daily & Work'),
-                budgetPerPiece: String(data.budgetPerPiece || '$250 – $500'),
+                budgetPerPiece: String(data.budgetPerPiece || '₹5,000 – ₹10,000'),
                 climate: String(data.climate || 'Mild / Layering'),
                 preferences: Array.isArray(data.preferences)
                   ? data.preferences.map(String)
@@ -292,6 +337,35 @@ export default function App() {
   ) => {
     event.preventDefault();
     setContactError('');
+
+    const trimmedName = contactName.trim();
+    const trimmedEmail = contactEmail.trim();
+    const trimmedMessage = contactMessage.trim();
+
+    const nextFieldErrors: {
+      name?: string;
+      email?: string;
+      message?: string;
+    } = {};
+
+    if (!trimmedName) {
+      nextFieldErrors.name = 'Please enter your name.';
+    }
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      nextFieldErrors.email =
+        'Please enter a valid email address (e.g. name@example.com).';
+    }
+    if (trimmedMessage.length < 5) {
+      nextFieldErrors.message =
+        'Please write a message of at least 5 characters.';
+    }
+
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setContactFieldErrors(nextFieldErrors);
+      return;
+    }
+
+    setContactFieldErrors({});
     setContactSending(true);
 
     try {
@@ -299,23 +373,42 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: contactName.trim(),
-          email: contactEmail.trim(),
-          message: contactMessage.trim(),
+          name: trimmedName,
+          email: trimmedEmail,
+          message: trimmedMessage,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Could not send message.');
+
+      const rawText = await res.text();
+      let data: { error?: string; referenceId?: string } | null = null;
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText) as { error?: string; referenceId?: string };
+        } catch {
+          data = null;
+        }
       }
+
+      if (!res.ok || !data?.referenceId) {
+        throw new Error(
+          data?.error ||
+            'Unable to send your message right now. Please try again or email hello@wardroby.app.'
+        );
+      }
+
       setContactRefId(data.referenceId);
       setContactName('');
       setContactEmail('');
       setContactMessage('');
     } catch (err) {
-      setContactError(
-        err instanceof Error ? err.message : 'Unable to send message.'
-      );
+      const msg = err instanceof Error ? err.message : '';
+      if (!msg || msg.toLowerCase().includes('expected pattern')) {
+        setContactError(
+          'Unable to reach the contact service right now. Please try again or email hello@wardroby.app.'
+        );
+      } else {
+        setContactError(msg);
+      }
     } finally {
       setContactSending(false);
     }
@@ -465,7 +558,7 @@ export default function App() {
                 '0 0 30px rgba(0, 0, 0, 0.32), 0 1px 10px rgba(0, 0, 0, 0.20)',
             }}
           >
-            Answer four quick steps — our AI curates your top 5 outfits from independent sellers.
+            Answer four quick steps — our AI curates your top 5 outfits in INR from Indian fashion platforms.
           </p>
 
           <div className="liquid-glass rounded-full p-1.5 inline-flex items-center">
@@ -547,7 +640,7 @@ export default function App() {
                 4 quick steps to your top 5 looks
               </h3>
               <p className="text-sm text-white/65 max-w-xl mx-auto leading-relaxed">
-                Tell us your body type, height frame, usual size, budget per piece, occasion, style preferences, and delivery timeline. Gemini AI selects five complete outfits matched across sellers.
+                Tell us your gender presentation, body type, height frame, usual size, INR budget per piece, occasion, style preferences, and delivery timeline. AI curates five complete outfits sourced across Indian sites like Myntra, Zara India, H&M, Uniqlo, Mango, and Nykaa Fashion.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <button
@@ -692,7 +785,7 @@ export default function App() {
                               {outfit.outfitTitle}
                             </h3>
                             <div className="text-sm font-semibold tabular-nums text-white shrink-0">
-                              ~${outfit.pricePerPieceEstimate}/piece · ${outfit.totalOutfitEstimate} look
+                              ~₹{Number(outfit.pricePerPieceEstimate || 0).toLocaleString('en-IN')}/piece · ₹{Number(outfit.totalOutfitEstimate || 0).toLocaleString('en-IN')} look
                             </div>
                           </div>
 
@@ -708,10 +801,25 @@ export default function App() {
 
                         <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-white/60">
                           <span>Styling note: {outfit.stylingTip}</span>
-                          <span className="inline-flex items-center gap-1.5 text-white/80 shrink-0">
-                            <Calendar className="w-3.5 h-3.5" />
-                            <span>{outfit.estimatedDelivery}</span>
-                          </span>
+                          <div className="flex flex-wrap items-center gap-4 shrink-0">
+                            <span className="inline-flex items-center gap-1.5 text-white/80">
+                              <Calendar className="w-3.5 h-3.5" />
+                              <span>{outfit.estimatedDelivery}</span>
+                            </span>
+                            <a
+                              href={getIndianStoreUrl(
+                                outfit.sourceUrl,
+                                outfit.sellerName,
+                                outfit.outfitTitle
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-white font-medium hover:text-white/80 underline underline-offset-4"
+                            >
+                              <span>Check on {outfit.sellerName}</span>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
                         </div>
                       </div>
                     </article>
@@ -856,9 +964,12 @@ export default function App() {
                         {design.title}
                       </h3>
                       <p className="text-xs text-white/55">
-                        Sellers:{' '}
+                        Available on:{' '}
                         {design.sellerListings
-                          .map((s) => `${s.sellerName} ($${s.price})`)
+                          .map(
+                            (s) =>
+                              `${s.sellerName} (₹${s.price.toLocaleString('en-IN')})`
+                          )
                           .join(' · ')}
                       </p>
                     </div>
@@ -894,10 +1005,13 @@ export default function App() {
             <p className="text-sm text-white/65 leading-relaxed">
               Questions about sizing, seller partnerships, or custom styling? Reach our team directly.
             </p>
-            <div className="flex items-center gap-2.5 text-sm text-white/80 pt-2">
+            <a
+              href="mailto:hello@wardroby.app"
+              className="inline-flex items-center gap-2.5 text-sm text-white/80 hover:text-white transition-colors pt-2"
+            >
               <Mail className="w-4 h-4 text-white/60" />
               <span>hello@wardroby.app</span>
-            </div>
+            </a>
           </div>
 
           <div className="md:col-span-7">
@@ -928,36 +1042,125 @@ export default function App() {
                   className="space-y-4"
                 >
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <input
-                      type="text"
-                      value={contactName}
-                      onChange={(e) => setContactName(e.target.value)}
-                      placeholder="Your name"
-                      aria-label="Your name"
-                      className="w-full rounded-2xl bg-black border border-white/15 focus:border-white/50 outline-none px-4 py-3 text-sm text-white placeholder:text-white/35"
-                    />
-                    <input
-                      type="email"
-                      value={contactEmail}
-                      onChange={(e) => setContactEmail(e.target.value)}
-                      placeholder="Your email"
-                      aria-label="Your email"
-                      className="w-full rounded-2xl bg-black border border-white/15 focus:border-white/50 outline-none px-4 py-3 text-sm text-white placeholder:text-white/35"
-                    />
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="contact-name"
+                        className="block text-xs text-white/65"
+                      >
+                        Name
+                      </label>
+                      <input
+                        id="contact-name"
+                        type="text"
+                        autoComplete="name"
+                        value={contactName}
+                        onChange={(e) => {
+                          setContactName(e.target.value);
+                          setContactError('');
+                          if (contactFieldErrors.name) {
+                            setContactFieldErrors((prev) => ({
+                              ...prev,
+                              name: undefined,
+                            }));
+                          }
+                        }}
+                        placeholder="e.g. Alex Morgan"
+                        className={`w-full rounded-2xl bg-black border outline-none px-4 py-3 text-sm text-white placeholder:text-white/35 transition-colors ${
+                          contactFieldErrors.name
+                            ? 'border-white/60'
+                            : 'border-white/15 focus:border-white/50'
+                        }`}
+                      />
+                      {contactFieldErrors.name && (
+                        <p className="text-xs text-white/80">
+                          {contactFieldErrors.name}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="contact-email"
+                        className="block text-xs text-white/65"
+                      >
+                        Email
+                      </label>
+                      <input
+                        id="contact-email"
+                        type="text"
+                        inputMode="email"
+                        autoComplete="email"
+                        value={contactEmail}
+                        onChange={(e) => {
+                          setContactEmail(e.target.value);
+                          setContactError('');
+                          if (contactFieldErrors.email) {
+                            setContactFieldErrors((prev) => ({
+                              ...prev,
+                              email: undefined,
+                            }));
+                          }
+                        }}
+                        placeholder="you@example.com"
+                        className={`w-full rounded-2xl bg-black border outline-none px-4 py-3 text-sm text-white placeholder:text-white/35 transition-colors ${
+                          contactFieldErrors.email
+                            ? 'border-white/60'
+                            : 'border-white/15 focus:border-white/50'
+                        }`}
+                      />
+                      {contactFieldErrors.email && (
+                        <p className="text-xs text-white/80">
+                          {contactFieldErrors.email}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <textarea
-                    rows={3}
-                    value={contactMessage}
-                    onChange={(e) => setContactMessage(e.target.value)}
-                    placeholder="Your message"
-                    aria-label="Your message"
-                    className="w-full rounded-2xl bg-black border border-white/15 focus:border-white/50 outline-none px-4 py-3 text-sm text-white placeholder:text-white/35 resize-none"
-                  />
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <label htmlFor="contact-message" className="text-white/65">
+                        Message
+                      </label>
+                      <span className="text-white/40">
+                        {contactMessage.trim().length < 5
+                          ? `${contactMessage.trim().length}/5 min characters`
+                          : 'Ready to send'}
+                      </span>
+                    </div>
+                    <textarea
+                      id="contact-message"
+                      rows={3}
+                      value={contactMessage}
+                      onChange={(e) => {
+                        setContactMessage(e.target.value);
+                        setContactError('');
+                        if (contactFieldErrors.message) {
+                          setContactFieldErrors((prev) => ({
+                            ...prev,
+                            message: undefined,
+                          }));
+                        }
+                      }}
+                      placeholder="How can our styling or support team help?"
+                      className={`w-full rounded-2xl bg-black border outline-none px-4 py-3 text-sm text-white placeholder:text-white/35 resize-none transition-colors ${
+                        contactFieldErrors.message
+                          ? 'border-white/60'
+                          : 'border-white/15 focus:border-white/50'
+                      }`}
+                    />
+                    {contactFieldErrors.message && (
+                      <p className="text-xs text-white/80">
+                        {contactFieldErrors.message}
+                      </p>
+                    )}
+                  </div>
+
                   {contactError && (
                     <p role="alert" className="text-xs text-white/90">
                       {contactError}
                     </p>
                   )}
+
                   <button
                     type="submit"
                     disabled={contactSending}

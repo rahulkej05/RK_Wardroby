@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Loader2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Sparkles, X } from 'lucide-react';
 import { BODY_TYPES, BodyTypeId, HeightFrame } from '../data/wardrobeCatalog';
 
 export type GenderOption =
@@ -21,6 +21,7 @@ export interface Top5OutfitRecommendation {
   whyItWorksForYou: string;
   stylingTip: string;
   referenceDesignId: string;
+  sourceUrl?: string;
 }
 
 export interface Top5AIResponse {
@@ -84,10 +85,11 @@ const OCCASION_PRESETS = [
 ];
 
 const BUDGET_OPTIONS = [
-  'Under $150',
-  '$150 – $300',
-  '$300 – $500',
-  '$500+',
+  'Under ₹2,500',
+  '₹2,500 – ₹5,000',
+  '₹5,000 – ₹10,000',
+  '₹10,000 – ₹20,000',
+  '₹20,000+',
   'Flexible',
 ];
 
@@ -127,6 +129,7 @@ export function RecommendationModal({
   const [values, setValues] = useState<WizardFormValues>(initialValues);
   const [customOccasion, setCustomOccasion] = useState('');
   const [loading, setLoading] = useState(false);
+  const [magicStageIndex, setMagicStageIndex] = useState(0);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -134,8 +137,20 @@ export function RecommendationModal({
       setValues(initialValues);
       setStep(0);
       setError('');
+      setMagicStageIndex(0);
     }
   }, [isOpen, initialValues]);
+
+  useEffect(() => {
+    if (!loading) {
+      setMagicStageIndex(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setMagicStageIndex((prev) => (prev + 1) % 5);
+    }, 1100);
+    return () => window.clearInterval(timer);
+  }, [loading]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -152,6 +167,14 @@ export function RecommendationModal({
 
   const activeBodyLabel =
     BODY_TYPES.find((b) => b.id === values.bodyType)?.label ?? 'Hourglass';
+
+  const magicStages = [
+    `Analyzing your ${values.gender} · ${activeBodyLabel} proportions...`,
+    `Curating ${values.occasion} looks within ${values.budgetPerPiece}...`,
+    'Scanning Myntra, Zara India, H&M, Uniqlo, Mango & Nykaa Fashion...',
+    `Matching ${values.deliveryPreference.toLowerCase()} pan-India delivery...`,
+    'Finalizing your Top 5 personalized outfits...',
+  ];
 
   const togglePreference = (pref: string) => {
     setValues((prev) => ({
@@ -175,6 +198,7 @@ export function RecommendationModal({
     e.preventDefault();
     setError('');
     setLoading(true);
+    setMagicStageIndex(0);
 
     const finalOccasion = customOccasion.trim()
       ? `${values.occasion} (${customOccasion.trim()})`
@@ -187,15 +211,30 @@ export function RecommendationModal({
     };
 
     try {
-      const res = await fetch('/api/recommendations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const minRevealDelay = new Promise((resolve) => setTimeout(resolve, 1100));
+      const [res] = await Promise.all([
+        fetch('/api/recommendations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }),
+        minRevealDelay,
+      ]);
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate recommendations.');
+      const rawText = await res.text();
+      let data: Top5AIResponse & { error?: string } | null = null;
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText) as Top5AIResponse & { error?: string };
+        } catch {
+          data = null;
+        }
+      }
+
+      if (!res.ok || !data || !Array.isArray(data.recommendations)) {
+        throw new Error(
+          data?.error || 'Failed to generate recommendations. Please try again.'
+        );
       }
 
       onSuccess({ ...values, occasion: finalOccasion }, data);
@@ -245,24 +284,85 @@ export function RecommendationModal({
         </div>
 
         {/* Step Bars */}
-        <div className="px-6 pt-4 flex items-center gap-2">
-          {STEP_LABELS.map((label, idx) => (
-            <button
-              key={label}
-              type="button"
-              disabled={loading}
-              onClick={() => {
-                setError('');
-                setStep(idx);
-              }}
-              className={`flex-1 h-1.5 rounded-full transition-colors cursor-pointer ${
-                idx <= step ? 'bg-white' : 'bg-white/15'
-              }`}
-              aria-label={`Go to step ${idx + 1}: ${label}`}
-            />
-          ))}
-        </div>
+        {!loading && (
+          <div className="px-6 pt-4 flex items-center gap-2">
+            {STEP_LABELS.map((label, idx) => (
+              <button
+                key={label}
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setError('');
+                  setStep(idx);
+                }}
+                className={`flex-1 h-1.5 rounded-full transition-colors cursor-pointer ${
+                  idx <= step ? 'bg-white' : 'bg-white/15'
+                }`}
+                aria-label={`Go to step ${idx + 1}: ${label}`}
+              />
+            ))}
+          </div>
+        )}
 
+        {loading ? (
+          <div className="px-6 py-12 sm:py-16 flex flex-col items-center text-center space-y-6">
+            {/* Magical pulsing concentric glass aura */}
+            <div className="relative w-24 h-24 flex items-center justify-center">
+              <span
+                aria-hidden="true"
+                className="absolute inset-0 rounded-full border border-white/25 animate-ping"
+                style={{ animationDuration: '2.2s' }}
+              />
+              <span
+                aria-hidden="true"
+                className="absolute inset-2 rounded-full border border-white/35 animate-pulse"
+              />
+              <div className="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center relative z-10">
+                <Sparkles className="w-6 h-6 animate-pulse" />
+              </div>
+            </div>
+
+            <div className="space-y-2 max-w-md">
+              <h3 className="font-serif-instrument text-3xl sm:text-4xl text-white">
+                Curating your Top 5 wardrobe
+              </h3>
+              <p className="text-sm text-white/80 min-h-[2.5rem] transition-opacity duration-300">
+                {magicStages[magicStageIndex]}
+              </p>
+            </div>
+
+            {/* Smooth progress bar */}
+            <div className="w-full max-w-sm h-1 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className="h-full bg-white rounded-full transition-all duration-700 ease-out"
+                style={{ width: `${((magicStageIndex + 1) / magicStages.length) * 100}%` }}
+              />
+            </div>
+
+            {/* Active Indian platforms & profile tags */}
+            <div className="flex flex-wrap items-center justify-center gap-2 max-w-md pt-1">
+              {[
+                'Myntra',
+                'Zara India',
+                'H&M India',
+                'Uniqlo India',
+                'Mango India',
+                'Nykaa Fashion',
+              ].map((store, idx) => (
+                <span
+                  key={store}
+                  className={`px-3 py-1 rounded-full text-[11px] border transition-colors duration-500 ${
+                    idx <= magicStageIndex + 1
+                      ? 'border-white/45 text-white bg-white/[0.06]'
+                      : 'border-white/10 text-white/40'
+                  }`}
+                >
+                  {store}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* STEP 1: Gender, Body Type, Height Frame, Usual Size, Fit */}
           {step === 0 && (
@@ -458,7 +558,7 @@ export function RecommendationModal({
                     htmlFor="wiz-budget"
                     className="block text-xs font-medium text-white/75 mb-2"
                   >
-                    Budget Per Piece
+                    Budget Per Piece (INR)
                   </label>
                   <select
                     id="wiz-budget"
@@ -471,6 +571,11 @@ export function RecommendationModal({
                     }
                     className="w-full rounded-2xl bg-black border border-white/15 focus:border-white/50 outline-none px-3.5 py-2.5 text-sm text-white"
                   >
+                    {!BUDGET_OPTIONS.includes(values.budgetPerPiece) && (
+                      <option value={values.budgetPerPiece} className="bg-black">
+                        {values.budgetPerPiece}
+                      </option>
+                    )}
                     {BUDGET_OPTIONS.map((opt) => (
                       <option key={opt} value={opt} className="bg-black">
                         {opt}
@@ -622,7 +727,7 @@ export function RecommendationModal({
                 />
               </div>
 
-              <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 text-xs text-white/75 space-y-1">
+              <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 text-xs text-white/75 space-y-1.5">
                 <p>
                   <strong className="text-white">Profile:</strong> {values.gender} ·{' '}
                   {activeBodyLabel} ·{' '}
@@ -638,6 +743,9 @@ export function RecommendationModal({
                   {values.preferences.length > 0
                     ? values.preferences.join(', ')
                     : 'Open'}
+                </p>
+                <p>
+                  <strong className="text-white">Indian Sources:</strong> Myntra · Zara India · H&M India · Uniqlo India · Mango India · Nykaa Fashion
                 </p>
               </div>
             </div>
@@ -681,18 +789,15 @@ export function RecommendationModal({
               <button
                 type="submit"
                 disabled={loading}
-                className="bg-white text-black rounded-full px-6 py-3 text-sm font-medium hover:bg-white/90 transition-colors inline-flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                className="bg-white text-black rounded-full px-7 py-3 text-sm font-medium hover:scale-[1.02] hover:bg-white/90 transition-all inline-flex items-center gap-2 cursor-pointer disabled:opacity-60"
               >
-                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                <span>
-                  {loading
-                    ? 'Generating Top 5 Outfits...'
-                    : 'Get Top 5 Recommendations'}
-                </span>
+                <Sparkles className="w-4 h-4" />
+                <span>Get Recommendations</span>
               </button>
             )}
           </div>
         </form>
+        )}
       </div>
     </div>
   );
