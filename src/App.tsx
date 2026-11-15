@@ -33,10 +33,9 @@ import { AuthModal } from './components/AuthModal';
 import {
   OperationType,
   SavedRecommendationRecord,
-  auth,
-  db,
   deleteRecommendationRun,
   ensureUserProfile,
+  getFirebase,
   handleFirestoreError,
   saveRecommendationRun,
   signOutUser,
@@ -106,70 +105,100 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setAuthReady(true);
-      if (user) {
-        ensureUserProfile(user).catch((err) => {
-          console.error('Could not sync user profile:', err);
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+
+    getFirebase()
+      .then(({ auth }) => {
+        if (cancelled) return;
+        unsubscribe = onAuthStateChanged(auth, (user) => {
+          setCurrentUser(user);
+          setAuthReady(true);
+          if (user) {
+            ensureUserProfile(user).catch((err) => {
+              console.error('Could not sync user profile:', err);
+            });
+          } else {
+            setSavedRuns([]);
+            setActiveRunId(null);
+          }
         });
-      } else {
-        setSavedRuns([]);
-        setActiveRunId(null);
-      }
-    });
-    return () => unsubscribe();
+      })
+      .catch((err) => {
+        console.error('Failed to initialize Firebase auth:', err);
+        if (!cancelled) {
+          setAuthReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   useEffect(() => {
     if (!authReady || !currentUser) return;
 
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
     const path = `users/${currentUser.uid}/recommendations`;
-    const q = query(collection(db, path), where('uid', '==', currentUser.uid));
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const runs: SavedRecommendationRecord[] = snapshot.docs.map((d) => {
-          const data = d.data({ serverTimestamps: 'estimate' });
-          const createdAtMs =
-            data.createdAt && typeof data.createdAt.toMillis === 'function'
-              ? data.createdAt.toMillis()
-              : Date.now();
-          return {
-            id: d.id,
-            uid: String(data.uid || currentUser.uid),
-            gender: String(data.gender || 'Women'),
-            bodyType: String(data.bodyType || 'hourglass'),
-            heightFrame: String(data.heightFrame || 'standard'),
-            usualSize: String(data.usualSize || 'M'),
-            fitPreference: String(data.fitPreference || 'Balanced'),
-            occasion: String(data.occasion || 'Daily & Work'),
-            budgetPerPiece: String(data.budgetPerPiece || '$250 – $500'),
-            climate: String(data.climate || 'Mild / Layering'),
-            preferences: Array.isArray(data.preferences)
-              ? data.preferences.map(String)
-              : [],
-            extraNotes: String(data.extraNotes || ''),
-            deliveryPreference: String(
-              data.deliveryPreference || 'Standard (3–5 Business Days)'
-            ),
-            targetDeliveryDate: String(data.targetDeliveryDate || ''),
-            stylingOverview: String(data.stylingOverview || ''),
-            outfits: Array.isArray(data.outfits) ? data.outfits : [],
-            createdAtMs,
-          };
-        });
+    getFirebase()
+      .then(({ db }) => {
+        if (cancelled) return;
+        const q = query(collection(db, path), where('uid', '==', currentUser.uid));
 
-        runs.sort((a, b) => b.createdAtMs - a.createdAtMs);
-        setSavedRuns(runs);
-      },
-      (err) => {
-        handleFirestoreError(err, OperationType.LIST, path);
-      }
-    );
+        unsubscribe = onSnapshot(
+          q,
+          (snapshot) => {
+            const runs: SavedRecommendationRecord[] = snapshot.docs.map((d) => {
+              const data = d.data({ serverTimestamps: 'estimate' });
+              const createdAtMs =
+                data.createdAt && typeof data.createdAt.toMillis === 'function'
+                  ? data.createdAt.toMillis()
+                  : Date.now();
+              return {
+                id: d.id,
+                uid: String(data.uid || currentUser.uid),
+                gender: String(data.gender || 'Women'),
+                bodyType: String(data.bodyType || 'hourglass'),
+                heightFrame: String(data.heightFrame || 'standard'),
+                usualSize: String(data.usualSize || 'M'),
+                fitPreference: String(data.fitPreference || 'Balanced'),
+                occasion: String(data.occasion || 'Daily & Work'),
+                budgetPerPiece: String(data.budgetPerPiece || '$250 – $500'),
+                climate: String(data.climate || 'Mild / Layering'),
+                preferences: Array.isArray(data.preferences)
+                  ? data.preferences.map(String)
+                  : [],
+                extraNotes: String(data.extraNotes || ''),
+                deliveryPreference: String(
+                  data.deliveryPreference || 'Standard (3–5 Business Days)'
+                ),
+                targetDeliveryDate: String(data.targetDeliveryDate || ''),
+                stylingOverview: String(data.stylingOverview || ''),
+                outfits: Array.isArray(data.outfits) ? data.outfits : [],
+                createdAtMs,
+              };
+            });
 
-    return () => unsubscribe();
+            runs.sort((a, b) => b.createdAtMs - a.createdAtMs);
+            setSavedRuns(runs);
+          },
+          (err) => {
+            handleFirestoreError(err, OperationType.LIST, path);
+          }
+        );
+      })
+      .catch((err) => {
+        console.error('Failed to initialize recommendations listener:', err);
+      });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [authReady, currentUser]);
 
   const scrollTo = (ref: React.RefObject<HTMLElement | null>) => {

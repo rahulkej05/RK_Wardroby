@@ -13,7 +13,7 @@ import {
 import {
   OperationType,
   clearUserChatMessages,
-  db,
+  getFirebase,
   handleFirestoreError,
   saveChatMessage,
 } from '../lib/firebase';
@@ -69,38 +69,54 @@ export function StylistChat({ user, onOpenAuth }: StylistChatProps) {
       return;
     }
 
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
     const path = `users/${user.uid}/chatMessages`;
-    const q = query(collection(db, path), where('uid', '==', user.uid));
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const docs: ChatMessage[] = snapshot.docs.map((d) => {
-          const data = d.data({ serverTimestamps: 'estimate' });
-          const createdAtMs =
-            data.createdAt && typeof data.createdAt.toMillis === 'function'
-              ? data.createdAt.toMillis()
-              : Date.now();
-          return {
-            id: d.id,
-            role: data.role === 'user' ? 'user' : 'assistant',
-            content: String(data.content || ''),
-            usedWebSearch: Boolean(data.usedWebSearch),
-            sources: Array.isArray(data.sources) ? data.sources : [],
-            createdAtMs,
-          };
-        });
+    getFirebase()
+      .then(({ db }) => {
+        if (cancelled) return;
+        const q = query(collection(db, path), where('uid', '==', user.uid));
 
-        docs.sort((a, b) => (a.createdAtMs ?? 0) - (b.createdAtMs ?? 0));
-        setSavedMessages(docs);
-      },
-      (err) => {
-        setError('Unable to load saved chat history.');
-        handleFirestoreError(err, OperationType.LIST, path);
-      }
-    );
+        unsubscribe = onSnapshot(
+          q,
+          (snapshot) => {
+            const docs: ChatMessage[] = snapshot.docs.map((d) => {
+              const data = d.data({ serverTimestamps: 'estimate' });
+              const createdAtMs =
+                data.createdAt && typeof data.createdAt.toMillis === 'function'
+                  ? data.createdAt.toMillis()
+                  : Date.now();
+              return {
+                id: d.id,
+                role: data.role === 'user' ? 'user' : 'assistant',
+                content: String(data.content || ''),
+                usedWebSearch: Boolean(data.usedWebSearch),
+                sources: Array.isArray(data.sources) ? data.sources : [],
+                createdAtMs,
+              };
+            });
 
-    return () => unsubscribe();
+            docs.sort((a, b) => (a.createdAtMs ?? 0) - (b.createdAtMs ?? 0));
+            setSavedMessages(docs);
+          },
+          (err) => {
+            setError('Unable to load saved chat history.');
+            handleFirestoreError(err, OperationType.LIST, path);
+          }
+        );
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError('Unable to initialize chat storage.');
+        }
+        console.error('Firebase init error in StylistChat:', err);
+      });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [user]);
 
   const displayedMessages = user

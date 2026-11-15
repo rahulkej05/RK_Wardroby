@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import fs from 'fs';
 import { createServer as createHttpServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -167,6 +168,44 @@ async function startServer() {
   const app = express();
   const httpServer = createHttpServer(app);
   app.use(express.json({ limit: '1mb' }));
+
+  // Runtime Firebase client config endpoint (prioritizes environment secrets over local config file)
+  app.get('/api/firebase-config', (_req, res) => {
+    let fileConfig: Record<string, string> = {};
+    const configPath = path.join(__dirname, 'firebase-applet-config.json');
+    if (fs.existsSync(configPath)) {
+      try {
+        fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      } catch (err) {
+        console.error('Failed to read firebase-applet-config.json:', err);
+      }
+    }
+
+    const clientConfig = {
+      projectId: process.env.FIREBASE_PROJECT_ID || fileConfig.projectId || '',
+      appId: process.env.FIREBASE_APP_ID || fileConfig.appId || '',
+      apiKey: process.env.FIREBASE_API_KEY || fileConfig.apiKey || '',
+      authDomain: process.env.FIREBASE_AUTH_DOMAIN || fileConfig.authDomain || '',
+      firestoreDatabaseId:
+        process.env.FIREBASE_FIRESTORE_DATABASE_ID ||
+        fileConfig.firestoreDatabaseId ||
+        '',
+      storageBucket:
+        process.env.FIREBASE_STORAGE_BUCKET || fileConfig.storageBucket || '',
+      messagingSenderId:
+        process.env.FIREBASE_MESSAGING_SENDER_ID ||
+        fileConfig.messagingSenderId ||
+        '',
+    };
+
+    if (!clientConfig.apiKey || !clientConfig.projectId || !clientConfig.appId) {
+      res.status(500).json({ error: 'Firebase configuration is unavailable.' });
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(clientConfig);
+  });
 
   // Feature 1: Top 5 AI Outfit Recommendations from 4-Step User Inputs (including Gender)
   app.post('/api/recommendations', async (req, res) => {

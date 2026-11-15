@@ -1,5 +1,6 @@
-import { initializeApp } from 'firebase/app';
+import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
 import {
+  Auth,
   GoogleAuthProvider,
   User,
   getAuth,
@@ -8,6 +9,7 @@ import {
   signOut,
 } from 'firebase/auth';
 import {
+  Firestore,
   addDoc,
   collection,
   deleteDoc,
@@ -22,15 +24,67 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
 import type {
   Top5AIResponse,
   WizardFormValues,
 } from '../components/RecommendationModal';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+interface FirebaseRuntimeConfig {
+  projectId: string;
+  appId: string;
+  apiKey: string;
+  authDomain: string;
+  firestoreDatabaseId?: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
+}
+
+export interface FirebaseServices {
+  app: FirebaseApp;
+  db: Firestore;
+  auth: Auth;
+}
+
+let firebasePromise: Promise<FirebaseServices> | null = null;
+let resolvedAuth: Auth | null = null;
+
+async function testConnection(db: Firestore) {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes('the client is offline')
+    ) {
+      console.error('Please check your Firebase configuration.');
+    }
+  }
+}
+
+export function getFirebase(): Promise<FirebaseServices> {
+  if (firebasePromise) return firebasePromise;
+
+  firebasePromise = (async () => {
+    const res = await fetch('/api/firebase-config', { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error('Unable to load Firebase runtime configuration.');
+    }
+    const config = (await res.json()) as FirebaseRuntimeConfig;
+    const app = getApps().length > 0 ? getApps()[0] : initializeApp(config);
+    const db = config.firestoreDatabaseId
+      ? getFirestore(app, config.firestoreDatabaseId)
+      : getFirestore(app);
+    const auth = getAuth(app);
+    resolvedAuth = auth;
+    testConnection(db);
+    return { app, db, auth };
+  })().catch((err) => {
+    firebasePromise = null;
+    throw err;
+  });
+
+  return firebasePromise;
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -63,16 +117,17 @@ export function handleFirestoreError(
   operationType: OperationType,
   path: string | null
 ): never {
+  const activeUser = resolvedAuth?.currentUser;
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
+      userId: activeUser?.uid,
+      email: activeUser?.email,
+      emailVerified: activeUser?.emailVerified,
+      isAnonymous: activeUser?.isAnonymous,
+      tenantId: activeUser?.tenantId,
       providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
+        activeUser?.providerData?.map((provider) => ({
           providerId: provider.providerId,
           email: provider.email,
         })) || [],
@@ -84,21 +139,8 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes('the client is offline')
-    ) {
-      console.error('Please check your Firebase configuration.');
-    }
-  }
-}
-testConnection();
-
 export async function signInWithGoogle() {
+  const { auth } = await getFirebase();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   const cred = await signInWithPopup(auth, provider);
@@ -107,16 +149,19 @@ export async function signInWithGoogle() {
 }
 
 export async function signInAsGuest() {
+  const { auth } = await getFirebase();
   const cred = await signInAnonymously(auth);
   await ensureUserProfile(cred.user);
   return cred.user;
 }
 
 export async function signOutUser() {
+  const { auth } = await getFirebase();
   await signOut(auth);
 }
 
 export async function ensureUserProfile(user: User): Promise<void> {
+  const { db } = await getFirebase();
   const userPath = `users/${user.uid}`;
   const userRef = doc(db, 'users', user.uid);
   const authMode = user.isAnonymous ? 'guest' : 'google';
@@ -176,6 +221,7 @@ export async function saveRecommendationRun(
   values: WizardFormValues,
   result: Top5AIResponse
 ): Promise<string> {
+  const { db } = await getFirebase();
   await ensureUserProfile(user);
   const collectionPath = `users/${user.uid}/recommendations`;
 
@@ -229,6 +275,7 @@ export async function deleteRecommendationRun(
   userId: string,
   recId: string
 ): Promise<void> {
+  const { db } = await getFirebase();
   const path = `users/${userId}/recommendations/${recId}`;
   try {
     await deleteDoc(doc(db, 'users', userId, 'recommendations', recId));
@@ -261,6 +308,7 @@ export async function saveChatMessage(
     sources?: ChatSource[];
   }
 ): Promise<string> {
+  const { db } = await getFirebase();
   await ensureUserProfile(user);
   const collectionPath = `users/${user.uid}/chatMessages`;
   const cleanSources = (payload.sources ?? []).slice(0, 5).map((s) => ({
@@ -284,6 +332,7 @@ export async function saveChatMessage(
 }
 
 export async function clearUserChatMessages(userId: string): Promise<void> {
+  const { db } = await getFirebase();
   const collectionPath = `users/${userId}/chatMessages`;
   try {
     const q = query(
