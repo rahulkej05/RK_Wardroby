@@ -1,0 +1,142 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedOrGuest() {
+      return isSignedIn() && (
+        request.auth.token.firebase.sign_in_provider == 'anonymous' ||
+        request.auth.token.email_verified == true
+      );
+    }
+
+    function isOwner(userId) {
+      return isVerifiedOrGuest() && request.auth.uid == userId;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'authMode', 'displayName', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'authMode', 'displayName', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.uid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && data.authMode in ['google', 'guest']
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidRecommendationRun(data, userId) {
+      return data.keys().hasAll([
+        'uid', 'gender', 'bodyType', 'heightFrame', 'usualSize', 'fitPreference',
+        'occasion', 'budgetPerPiece', 'climate', 'preferences', 'extraNotes',
+        'deliveryPreference', 'targetDeliveryDate', 'stylingOverview', 'outfits', 'createdAt'
+      ])
+        && data.keys().hasOnly([
+        'uid', 'gender', 'bodyType', 'heightFrame', 'usualSize', 'fitPreference',
+        'occasion', 'budgetPerPiece', 'climate', 'preferences', 'extraNotes',
+        'deliveryPreference', 'targetDeliveryDate', 'stylingOverview', 'outfits', 'createdAt'
+      ])
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.uid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && data.gender is string && data.gender.size() >= 1 && data.gender.size() <= 40
+        && data.bodyType is string && data.bodyType.size() >= 1 && data.bodyType.size() <= 40
+        && data.heightFrame is string && data.heightFrame.size() >= 1 && data.heightFrame.size() <= 30
+        && data.usualSize is string && data.usualSize.size() >= 1 && data.usualSize.size() <= 16
+        && data.fitPreference is string && data.fitPreference.size() >= 1 && data.fitPreference.size() <= 40
+        && data.occasion is string && data.occasion.size() >= 1 && data.occasion.size() <= 160
+        && data.budgetPerPiece is string && data.budgetPerPiece.size() >= 1 && data.budgetPerPiece.size() <= 60
+        && data.climate is string && data.climate.size() >= 1 && data.climate.size() <= 60
+        && data.preferences is list && data.preferences.size() <= 12
+        && (data.preferences.size() == 0 || (data.preferences[0] is string && data.preferences[0].size() <= 60))
+        && data.extraNotes is string && data.extraNotes.size() <= 500
+        && data.deliveryPreference is string && data.deliveryPreference.size() >= 1 && data.deliveryPreference.size() <= 80
+        && data.targetDeliveryDate is string && data.targetDeliveryDate.size() <= 32
+        && data.stylingOverview is string && data.stylingOverview.size() >= 1 && data.stylingOverview.size() <= 1200
+        && data.outfits is list && data.outfits.size() >= 1 && data.outfits.size() <= 5
+        && data.outfits[0] is map
+        && data.createdAt is timestamp;
+    }
+
+    function isValidChatMessage(data, userId) {
+      return data.keys().hasAll(['uid', 'role', 'content', 'usedWebSearch', 'sources', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'role', 'content', 'usedWebSearch', 'sources', 'createdAt'])
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.uid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && data.role in ['user', 'assistant']
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 4000
+        && data.usedWebSearch is bool
+        && data.sources is list && data.sources.size() <= 5
+        && (data.sources.size() == 0 || data.sources[0] is map)
+        && data.createdAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'authMode', 'updatedAt'])
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+
+      match /recommendations/{recId} {
+        allow get: if isValidId(userId) && isValidId(recId) && isOwner(userId) && existing().uid == request.auth.uid;
+        allow list: if isValidId(userId) && isOwner(userId) && resource.data.uid == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(recId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && isValidRecommendationRun(incoming(), userId)
+          && incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(recId) && isOwner(userId) && existing().uid == request.auth.uid;
+      }
+
+      match /chatMessages/{messageId} {
+        allow get: if isValidId(userId) && isValidId(messageId) && isOwner(userId) && existing().uid == request.auth.uid;
+        allow list: if isValidId(userId) && isOwner(userId) && resource.data.uid == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(messageId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && isValidChatMessage(incoming(), userId)
+          && incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(messageId) && isOwner(userId) && existing().uid == request.auth.uid;
+      }
+    }
+  }
+}

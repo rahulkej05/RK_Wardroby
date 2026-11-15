@@ -1,0 +1,184 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated Google or Guest user profile metadata.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authMode": {
+          "type": "string",
+          "enum": ["google", "guest"]
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "authMode", "displayName", "createdAt", "updatedAt"]
+    },
+    "RecommendationRun": {
+      "title": "RecommendationRun",
+      "description": "Saved 4-step outfit intake inputs and Gemini Top 5 outfit recommendations.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "gender": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "bodyType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "heightFrame": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "usualSize": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "fitPreference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "occasion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "budgetPerPiece": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "climate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "preferences": {
+          "type": "array",
+          "description": "Multi-selected style and material preferences (max 12)."
+        },
+        "extraNotes": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "deliveryPreference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "targetDeliveryDate": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "stylingOverview": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1200
+        },
+        "outfits": {
+          "type": "array",
+          "description": "Top 5 ranked outfit recommendations returned by Gemini."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "gender",
+        "bodyType",
+        "heightFrame",
+        "usualSize",
+        "fitPreference",
+        "occasion",
+        "budgetPerPiece",
+        "climate",
+        "preferences",
+        "extraNotes",
+        "deliveryPreference",
+        "targetDeliveryDate",
+        "stylingOverview",
+        "outfits",
+        "createdAt"
+      ]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Individual fashion Q&A query or stylist response stored per user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "assistant"]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "usedWebSearch": {
+          "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "description": "Optional web sources returned by Tavily (max 5)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "role", "content", "usedWebSearch", "sources", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile metadata for Google and Guest sessions."
+    },
+    "/users/{userId}/recommendations/{recId}": {
+      "schema": { "$ref": "#/entities/RecommendationRun" },
+      "description": "Saved Top 5 AI outfit recommendation runs owned by userId."
+    },
+    "/users/{userId}/chatMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Saved fashion Q&A chatbot queries and responses owned by userId."
+    }
+  }
+}
