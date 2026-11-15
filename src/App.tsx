@@ -45,6 +45,8 @@ import {
 const HERO_VIDEO_URL =
   'https://designerstephen.github.io/public-assets/videos/observe-hero.mp4';
 
+const ACCOUNT_CONTACT_EMAIL = 'rahul.kej05@gmail.com';
+
 const DEFAULT_WIZARD_VALUES: WizardFormValues = {
   gender: 'Women',
   bodyType: 'hourglass',
@@ -133,6 +135,8 @@ export default function App() {
     message?: string;
   }>({});
   const [contactRefId, setContactRefId] = useState<string | null>(null);
+  const [contactMailtoUrl, setContactMailtoUrl] = useState<string | null>(null);
+  const [contactEmailedDirectly, setContactEmailedDirectly] = useState(false);
 
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
@@ -380,10 +384,20 @@ export default function App() {
       });
 
       const rawText = await res.text();
-      let data: { error?: string; referenceId?: string } | null = null;
+      let data: {
+        error?: string;
+        referenceId?: string;
+        recipientEmail?: string;
+        emailedDirectly?: boolean;
+      } | null = null;
       if (rawText) {
         try {
-          data = JSON.parse(rawText) as { error?: string; referenceId?: string };
+          data = JSON.parse(rawText) as {
+            error?: string;
+            referenceId?: string;
+            recipientEmail?: string;
+            emailedDirectly?: boolean;
+          };
         } catch {
           data = null;
         }
@@ -392,11 +406,27 @@ export default function App() {
       if (!res.ok || !data?.referenceId) {
         throw new Error(
           data?.error ||
-            'Unable to send your message right now. Please try again or email hello@wardroby.app.'
+            `Unable to send your message right now. Please try again or email ${ACCOUNT_CONTACT_EMAIL}.`
         );
       }
 
+      const recipient = data.recipientEmail || ACCOUNT_CONTACT_EMAIL;
+      const subject = `[Wardroby ${data.referenceId}] Message from ${trimmedName}`;
+      const body = `Name: ${trimmedName}\nEmail: ${trimmedEmail}\nReference: ${data.referenceId}\n\n${trimmedMessage}`;
+      const mailtoHref = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+      if (!data.emailedDirectly) {
+        const mailLink = document.createElement('a');
+        mailLink.href = mailtoHref;
+        mailLink.style.display = 'none';
+        document.body.appendChild(mailLink);
+        mailLink.click();
+        mailLink.remove();
+      }
+
       setContactRefId(data.referenceId);
+      setContactMailtoUrl(mailtoHref);
+      setContactEmailedDirectly(Boolean(data.emailedDirectly));
       setContactName('');
       setContactEmail('');
       setContactMessage('');
@@ -404,7 +434,7 @@ export default function App() {
       const msg = err instanceof Error ? err.message : '';
       if (!msg || msg.toLowerCase().includes('expected pattern')) {
         setContactError(
-          'Unable to reach the contact service right now. Please try again or email hello@wardroby.app.'
+          `Unable to reach the contact service right now. Please try again or email ${ACCOUNT_CONTACT_EMAIL}.`
         );
       } else {
         setContactError(msg);
@@ -1006,11 +1036,11 @@ export default function App() {
               Questions about sizing, seller partnerships, or custom styling? Reach our team directly.
             </p>
             <a
-              href="mailto:hello@wardroby.app"
+              href={`mailto:${ACCOUNT_CONTACT_EMAIL}`}
               className="inline-flex items-center gap-2.5 text-sm text-white/80 hover:text-white transition-colors pt-2"
             >
               <Mail className="w-4 h-4 text-white/60" />
-              <span>hello@wardroby.app</span>
+              <span>{ACCOUNT_CONTACT_EMAIL}</span>
             </a>
           </div>
 
@@ -1022,18 +1052,37 @@ export default function App() {
                     <Check className="w-5 h-5" />
                   </div>
                   <p className="text-base font-medium text-white">
-                    Message sent ({contactRefId})
+                    {contactEmailedDirectly
+                      ? `Message sent to ${ACCOUNT_CONTACT_EMAIL} (${contactRefId})`
+                      : `Email prepared for ${ACCOUNT_CONTACT_EMAIL} (${contactRefId})`}
                   </p>
                   <p className="text-xs text-white/60">
-                    We will reply to your email shortly.
+                    {contactEmailedDirectly
+                      ? 'Your message has been delivered. We will reply shortly.'
+                      : 'Your default mail app was triggered with your message pre-filled.'}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => setContactRefId(null)}
-                    className="bg-white text-black rounded-full px-5 py-2 text-xs font-medium cursor-pointer"
-                  >
-                    Send Another
-                  </button>
+                  <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+                    {contactMailtoUrl && !contactEmailedDirectly && (
+                      <a
+                        href={contactMailtoUrl}
+                        className="bg-white text-black rounded-full px-5 py-2 text-xs font-medium inline-flex items-center gap-1.5 hover:bg-white/90 transition-colors"
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>Open in Mail App</span>
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContactRefId(null);
+                        setContactMailtoUrl(null);
+                        setContactEmailedDirectly(false);
+                      }}
+                      className="border border-white/25 hover:border-white/50 text-white rounded-full px-5 py-2 text-xs font-medium cursor-pointer transition-colors"
+                    >
+                      Send Another
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <form

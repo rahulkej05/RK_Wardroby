@@ -665,8 +665,8 @@ RESPONSE LENGTH & STYLE RULE (STRICT):
     }
   });
 
-  // Simple Contact Us Endpoint
-  app.post('/api/contact', (req, res) => {
+  // Contact Us Endpoint linked to account owner email
+  app.post('/api/contact', async (req, res) => {
     const { name, email, message } = req.body ?? {};
     if (!name || typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ error: 'Please enter your name.' });
@@ -685,10 +685,41 @@ RESPONSE LENGTH & STYLE RULE (STRICT):
       return;
     }
 
+    const recipientEmail =
+      process.env.CONTACT_RECIPIENT_EMAIL || 'rahul.kej05@gmail.com';
     const referenceId = `WRB-${Math.floor(10000 + Math.random() * 90000)}`;
+    let emailedDirectly = false;
+
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (resendApiKey) {
+      try {
+        const emailRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: process.env.RESEND_FROM_EMAIL || 'Wardroby <onboarding@resend.dev>',
+            to: [recipientEmail],
+            reply_to: email.trim(),
+            subject: `[Wardroby ${referenceId}] Message from ${name.trim()}`,
+            text: `Reference ID: ${referenceId}\nFrom: ${name.trim()} <${email.trim()}>\n\n${message.trim()}`,
+          }),
+        });
+        if (emailRes.ok) {
+          emailedDirectly = true;
+        }
+      } catch (err) {
+        console.error('Resend contact delivery failed:', err);
+      }
+    }
+
     res.json({
       ok: true,
       referenceId,
+      recipientEmail,
+      emailedDirectly,
       receivedAt: new Date().toISOString(),
     });
   });
