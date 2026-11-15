@@ -7,7 +7,6 @@ import { fileURLToPath } from 'url';
 import {
   FunctionDeclaration,
   GoogleGenAI,
-  ThinkingLevel,
   Type,
 } from '@google/genai';
 
@@ -147,6 +146,7 @@ async function runTavilySearch(query: string): Promise<TavilySearchPayload> {
         include_answer: true,
         max_results: 5,
       }),
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!response.ok) {
@@ -518,7 +518,6 @@ ${recentContext}
 
 Latest user message: "${latestMessage.content.trim()}"`,
         config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.OBJECT,
@@ -580,7 +579,6 @@ RESPONSE LENGTH & STYLE RULE (STRICT):
         model: 'gemini-4-hydrogen',
         contents,
         config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           systemInstruction,
           tools,
         },
@@ -637,7 +635,6 @@ RESPONSE LENGTH & STYLE RULE (STRICT):
             },
           ],
           config: {
-            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
             systemInstruction,
             tools,
           },
